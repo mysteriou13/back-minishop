@@ -1,7 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import {Model} from "mongoose";
-import {User, UserDocument} from "./schemas/user.schema";
+import {User, UserDocument} from "../schemas/user.schema";
+
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
 
 type FormField = {
   name: string;
@@ -17,7 +20,6 @@ export class AppService {
   }
 
   async getInscription(body: unknown){
-    console.log('inscription service inscription',body); // Affiche les données reçues dans la console
 
     const fieldMap: Record<string, keyof User> = {
       email: 'email',
@@ -45,14 +47,21 @@ export class AppService {
       return acc;
     }, {} as Partial<Record<keyof User, string>>);
 
-    const createdUser = new this.userModel(normalizedUser);
-  /*verif user exist*/
-    const existingUser = this.userModel.findOne({ email: normalizedUser.email }).exec();
-    if (await existingUser) {
-      throw new BadRequestException('Un utilisateur avec cet email existe déjà');
-    }else {
-    createdUser.save();
+    if (!normalizedUser.email || !normalizedUser.password) {
+      throw new BadRequestException('Email et mot de passe sont obligatoires');
     }
+
+    /*bcrypt password with bcrypt*/
+    normalizedUser.password = await bcrypt.hash(normalizedUser.password, saltRounds);
+
+    /*verify if user exists*/
+    const existingUser = await this.userModel.findOne({ email: normalizedUser.email }).exec();
+    if (existingUser) {
+      throw new BadRequestException('Un utilisateur avec cet email existe déjà');
+    }
+
+    const createdUser = new this.userModel(normalizedUser);
+    return await createdUser.save();
 }
 
   private extractFormFields(payload: unknown): FormField[] {
