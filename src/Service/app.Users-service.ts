@@ -1,99 +1,46 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import {Model} from "mongoose";
-import {User, UserDocument} from "../schemas/user.schema";
+import { Model } from "mongoose";
+import { User, UserDocument } from "../schemas/user.schema";
 
 const bcrypt = require('bcrypt');
 const saltRounds = 10;
-
-type FormField = {
+type Data = {
   name: string;
   value: string;
 };
+
+let databack: { [key: string]: string } = {};
+
 
 @Injectable()
 export class AppService {
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>
-  ){
+  ) {
   }
 
-  async getInscription(body: unknown){
-
-    const fieldMap: Record<string, keyof User> = {
-      email: 'email',
-      password: 'password',
-      nom: 'nom',
-      prenom: 'prenom',
-      adress: 'adress',
-      'complement adress': 'complement_adress',
-      ville: 'ville',
-      'code postal': 'code_postal',
-      pays: 'pays',
-      region: 'region',
-    };
-
-    const fields = this.extractFormFields(body);
-    if (!fields.length) {
-      throw new BadRequestException('Payload inscription invalide: aucun champ recu');
-    }
-
-    const normalizedUser = fields.reduce((acc, field) => {
-      const key = fieldMap[field.name.trim().toLowerCase()];
-      if (key) {
-        acc[key] = String(field.value ?? '');
+  async getInscription(body: Data[]) {
+    body.map((data: Data) => {
+      if (data.name === 'password') {
+        data.value = bcrypt.hashSync(data.value, saltRounds);
       }
-      return acc;
-    }, {} as Partial<Record<keyof User, string>>);
-
-    if (!normalizedUser.email || !normalizedUser.password) {
-      throw new BadRequestException('Email et mot de passe sont obligatoires');
-    }
-
-    /*bcrypt password with bcrypt*/
-    normalizedUser.password = await bcrypt.hash(normalizedUser.password, saltRounds);
-
-    /*verify if user exists*/
-    const existingUser = await this.userModel.findOne({ email: normalizedUser.email }).exec();
+      databack[data.name] = data.value;
+    });
+    let existingUser = await this.userModel.findOne({ email: databack.email });
     if (existingUser) {
-      throw new BadRequestException('Un utilisateur avec cet email existe déjà');
+      return [{ inscriptionStatus: false }];
+    } else {
+
+      await this.userModel.create(databack);
+      return [{ inscriptionStatus: true }];
     }
-
-    const createdUser = new this.userModel(normalizedUser);
-    return await createdUser.save();
-}
-
-  private extractFormFields(payload: unknown): FormField[] {
-    if (Array.isArray(payload)) {
-      return payload.filter(
-        (item): item is FormField =>
-          !!item && typeof item === 'object' && 'name' in item && 'value' in item,
-      );
-    }
-
-    if (payload && typeof payload === 'object') {
-      const source = payload as Record<string, unknown>;
-
-      if (Array.isArray(source.data)) {
-        return this.extractFormFields(source.data);
-      }
-
-      if (Array.isArray(source.fields)) {
-        return this.extractFormFields(source.fields);
-      }
-
-      return Object.entries(source).map(([name, value]) => ({
-        name,
-        value: String(value ?? ''),
-      }));
-    }
-
-    return [];
   }
 
-  getConnexion(body: [][]): string {
-    console.log('connection service connection',body); // Affiche les données reçues dans la console
+
+  getConnexion(body: Data[]): string {
+    console.log('connection service connection', body); // Affiche les données reçues dans la console
     return 'connection Hello World!';
   }
 }
